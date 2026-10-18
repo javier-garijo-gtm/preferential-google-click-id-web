@@ -36,6 +36,39 @@ ___TEMPLATE_PARAMETERS___
     "type": "LABEL",
     "name": "developer_attribution",
     "displayName": "Developed by Javier Garijo | Fixed Analytics™ | github.com/javier-garijo-gtm"
+  },
+  {
+    "type": "GROUP",
+    "name": "loggingSettings",
+    "displayName": "Logging Preferences",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "RADIO",
+        "name": "loggingPreference",
+        "displayName": "Logging Preferences",
+        "simpleValueType": true,
+        "defaultValue": "debug",
+        "radioItems": [
+          {
+            "value": "none",
+            "displayValue": "Disable Logging",
+            "help": "Never log diagnostics."
+          },
+          {
+            "value": "debug",
+            "displayValue": "Debug Mode (Default)",
+            "help": "Log only in GTM Preview/Debug."
+          },
+          {
+            "value": "always",
+            "displayValue": "Always Log",
+            "help": "Log in Preview and production."
+          }
+        ],
+        "help": "Logs only consent outcome, number of available IDs, and preferred source cookie. Never logs actual click ID values."
+      }
+    ]
   }
 ]
 
@@ -47,8 +80,22 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 // Checks Google Consent Mode ad_storage before accessing cookies.
 const isConsentGranted = require('isConsentGranted');
 const getCookieValues = require('getCookieValues');
+const logToConsole = require('logToConsole');
+const getContainerVersion = require('getContainerVersion');
+
+// Logging is optional and never includes the click ID values.
+function loggingIsEnabled() {
+  var setting = data.loggingPreference || 'debug';
+  if (setting === 'none') return false;
+  if (setting === 'always') return true;
+  var container = getContainerVersion();
+  return !!(container && (container.debugMode || container.previewMode));
+}
 
 if (!isConsentGranted('ad_storage')) {
+  if (loggingIsEnabled()) {
+    logToConsole('Preferential Google Ads Click ID - Fixed Analytics™: ad_storage denied; cookies not read');
+  }
   return undefined;
 }
 
@@ -138,6 +185,17 @@ if (result.fp_gclid !== null) {
 }
 result.preferential_click_id = preferred;
 result.preferential_click_id_type = preferredType;
+if (loggingIsEnabled()) {
+  var availableCount = 0;
+  var fieldsToCount = ['fp_gclid', 'fp_gbraid', 'fp_wbraid', 'gclid', 'gbraid', 'wbraid'];
+  for (var i = 0; i < fieldsToCount.length; i++) {
+    if (result[fieldsToCount[i]] !== null) availableCount++;
+  }
+  logToConsole('Preferential Google Ads Click ID - Fixed Analytics™: ' +
+    'ad_storage check passed, available IDs=' + availableCount +
+    ', preferred cookie=' + (result.preferential_click_id_type || 'none'));
+}
+
 return result;
 
 ___WEB_PERMISSIONS___
@@ -248,6 +306,37 @@ ___WEB_PERMISSIONS___
       "isEditedByUser": true
     },
     "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "logging",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "environments",
+          "value": {
+            "type": 1,
+            "string": "all"
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "read_container_data",
+        "versionId": "1"
+      },
+      "param": []
+    },
+    "isRequired": true
   }
 ]
 
@@ -263,3 +352,5 @@ Preference: FPGCLAW > _gcl_aw > FPGCLAG > _gcl_ag > FPGCLGB > _gcl_gb.
 Cookie access and GBRAID extraction intentionally replicate the original working template: first cookie value, parse after k to $.
 Uses get_cookies permission for the six specific required cookies. Checks ad_storage; no persisted storage or explicit caching.
 Null for absent IDs; undefined if ad_storage consent is denied. No embedded tests.
+
+Logging Preferences: Disable Logging, Debug Mode (default), Always Log. Logs include consent result, available-ID count, and winning cookie name only; no click ID values. Additional permissions: logging (all environments) and read_container_data for Preview/Debug detection.
